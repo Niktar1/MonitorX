@@ -130,9 +130,9 @@ async function handleAddWebhook() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, url })
         });
+        const data = await res.json();
         if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error);
+            throw new Error(data.error || 'Failed to add webhook');
         }
         webhookNameInput.value = '';
         webhookUrlInput.value = '';
@@ -164,13 +164,19 @@ async function handleDeleteWebhook(id) {
 
 function handleStart() {
     fetch(`${API_BASE}/scan/start`, { method: 'POST' })
-        .then(() => checkStatus())
+        .then(() => {
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+        })
         .catch(err => alert('Failed to start monitor'));
 }
 
 function handleStop() {
     fetch(`${API_BASE}/scan/stop`, { method: 'POST' })
-        .then(() => checkStatus())
+        .then(() => {
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        })
         .catch(err => alert('Failed to stop monitor'));
 }
 

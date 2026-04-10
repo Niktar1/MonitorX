@@ -1,7 +1,7 @@
 // core/scheduler.js
 const logger = require('../logger');
 const config = require('../config');
-const { getAuthenticatedContext, closeContext } = require('./auth');
+const { getAuthenticatedPage } = require('./auth');
 const { extractPostIds, getNewPostIds } = require('./scraper');
 const { getDb } = require('./db'); // We'll create db.js next
 const { sendNotifications } = require('./notifier');
@@ -91,7 +91,7 @@ async function runWatchJob(watch) {
     // Get authenticated context (reuses session)
     let context, page;
     try {
-        ({ context, page } = await getAuthenticatedContext());
+        ({ context, page } = await getAuthenticatedPage());
         
         // Extract current post IDs
         const currentIds = await extractPostIds(page, url);
@@ -118,9 +118,59 @@ async function runWatchJob(watch) {
         } else {
             await db.run('UPDATE watches SET last_scan = CURRENT_TIMESTAMP WHERE id = ?', [id]);
         }
+    } catch (error) {
+        logger.error(`Error scanning ${url}: ${error.message}`);
     } finally {
-        if (context) await closeContext(context);
+        // Close only the page, NOT the context
+        if (page) await page.close().catch(() => {});
     }
 }
 
-module.exports = { startScheduler, scheduleWatch, unscheduleWatch, stopAllJobs };
+let isPaused = false;
+const pausedJobs = new Map(); // Store intervals when paused
+
+function pauseAllJobs() {
+    if (isPaused) return;
+    isPaused = true;
+    for (const [id, job] of activeJobs) {
+        clearInterval(job.interval);
+        pausedJobs.set(id, job);
+    }
+    activeJobs.clear();
+    logger.info('All monitoring jobs paused.');
+}
+
+function resumeAllJobs() {
+    if (!isPaused) return;
+    isPaused = false;
+    for (const [id, job] of pausedJobs) {
+        const newInterval = setInterval(async () => {
+            if (job.lock) return;
+            job.lock = true;
+            try {
+                const db = await getDb();
+                const watch = await db.get('SELECT * FROM watches WHERE id = ?', [id]);
+                if (watch && watch.active) {
+                    await runWatchJob(watch);
+                }
+            } catch (error) {
+                logger.error(`Error in resumed job: ${error.message}`);
+            } finally {
+                job.lock = false;
+            }
+        }, config.scanIntervalMs);
+        job.interval = newInterval;
+        activeJobs.set(id, job);
+    }
+    pausedJobs.clear();
+    logger.info('All monitoring jobs resumed.');
+}
+
+module.exports = {
+    startScheduler,
+    scheduleWatch,
+    unscheduleWatch,
+    stopAllJobs,
+    pauseAllJobs,
+    resumeAllJobs
+};

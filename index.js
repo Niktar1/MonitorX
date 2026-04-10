@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const config = require('./config');
 const logger = require('./logger');
+const { closePersistentContext } = require('./core/auth');
 const { getDb, closeDb } = require('./core/db');
 const { startScheduler, stopAllJobs } = require('./core/scheduler');
 const apiRoutes = require('./web/routes');
@@ -18,21 +19,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api', apiRoutes);
 
 // Serve frontend for any other route (SPA fallback)
-app.get('*', (req, res) => {
+app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Graceful shutdown handler
 process.on('SIGINT', async () => {
-    logger.info('Received SIGINT. Shutting down gracefully...');
+    logger.info('Shutting down...');
     stopAllJobs();
+    await closePersistentContext();
     await closeDb();
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-    logger.info('Received SIGTERM. Shutting down gracefully...');
+    logger.info('Shutting down...');
     stopAllJobs();
+    await closePersistentContext();
     await closeDb();
     process.exit(0);
 });
@@ -40,15 +43,20 @@ process.on('SIGTERM', async () => {
 // Start server
 async function startServer() {
     try {
-        await getDb(); // Initialize database
-        await startScheduler(); // Start monitoring existing watches
+        await getDb();
+        await startScheduler();
+        
+        // Pre-warm authentication check (will open visible browser if not logged in)
+        const { ensureLoggedIn } = require('./core/auth');
+        await ensureLoggedIn().catch(err => {
+            logger.warn('Could not verify Facebook login at startup. You may need to log in via the UI.');
+        });
         
         app.listen(config.port, () => {
             logger.info(`MonitorX Web UI running at http://localhost:${config.port}`);
-            logger.info(`Press Ctrl+C to stop.`);
         });
     } catch (error) {
-        logger.error(`Failed to start server: ${error.message}`);
+        logger.error(`Failed to start: ${error.message}`);
         process.exit(1);
     }
 }
