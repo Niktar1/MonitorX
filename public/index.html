@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MonitorX - Facebook Group Monitor</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 MonitorX</h1>
+            <p class="subtitle">Facebook Group Monitoring</p>
+            <div id="status-indicator" class="status offline">● Offline</div>
+        </header>
+
+        <main>
+            <!-- Login Section -->
+            <section class="card">
+                <h2>1. Facebook Login</h2>
+                <p>Log in once to save your session for background monitoring.</p>
+                <button id="login-btn" class="btn primary">🔑 Login to Facebook</button>
+                <span id="login-status" class="status-text"></span>
+            </section>
+
+            <!-- Add Watch Section -->
+            <section class="card">
+                <h2>2. Add Group to Monitor</h2>
+                <div class="input-group">
+                    <input type="text" id="watch-url" placeholder="https://www.facebook.com/groups/..." />
+                    <button id="add-watch-btn" class="btn secondary">➕ Add Watch</button>
+                </div>
+            </section>
+
+            <!-- Webhooks Section -->
+            <section class="card">
+                <h2>3. Discord Webhooks</h2>
+                <div class="webhook-defaults">
+                    <label>Quick Select:</label>
+                    <select id="webhook-select">
+                        <option value="">-- Choose default --</option>
+                        <!-- Populated via JS -->
+                    </select>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="webhook-name" placeholder="Webhook Name (optional)" />
+                    <input type="text" id="webhook-url" placeholder="https://discord.com/api/webhooks/..." />
+                    <button id="add-webhook-btn" class="btn secondary">➕ Add Webhook</button>
+                </div>
+            </section>
+
+            <!-- Control Section -->
+            <section class="card">
+                <h2>4. Control</h2>
+                <button id="start-monitor-btn" class="btn success">▶ Start Monitoring</button>
+                <button id="stop-monitor-btn" class="btn danger" disabled>⏹ Stop Monitoring</button>
+            </section>
+
+            <!-- Data Tables -->
+            <section class="card">
+                <h2>Active Watches</h2>
+                <div id="watches-list" class="list-container">
+                    <p class="empty-message">No groups monitored yet.</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Webhooks</h2>
+                <div id="webhooks-list" class="list-container">
+                    <p class="empty-message">No webhooks configured.</p>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>MonitorX runs in the background at <code>http://localhost:3000</code></p>
+        </footer>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
