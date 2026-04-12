@@ -13,6 +13,7 @@ const startBtn = document.getElementById('start-monitor-btn');
 const stopBtn = document.getElementById('stop-monitor-btn');
 const watchesList = document.getElementById('watches-list');
 const webhooksList = document.getElementById('webhooks-list');
+const devModeCheckbox = document.getElementById('dev-mode-checkbox');
 
 const defaultWebhooks = [
     { name: 'Alerts Channel', url: '' },
@@ -24,12 +25,14 @@ document.addEventListener('DOMContentLoaded', () => {
     loadWatches();
     loadWebhooks();
     populateWebhookSelect();
+    loadDevMode();
 
     loginBtn.addEventListener('click', handleLogin);
     addWatchBtn.addEventListener('click', handleAddWatch);
     addWebhookBtn.addEventListener('click', handleAddWebhook);
     startBtn.addEventListener('click', handleStart);
     stopBtn.addEventListener('click', handleStop);
+    devModeCheckbox.addEventListener('change', handleDevModeToggle);
 });
 
 async function checkStatus() {
@@ -277,6 +280,33 @@ function truncateUrl(url, maxLength = 40) {
     }
 
     return `${url.substring(0, maxLength)}...`;
+}
+
+async function loadDevMode() {
+    try {
+        const res = await fetch(`${API_BASE}/dev-mode`);
+        const data = await res.json();
+        devModeCheckbox.checked = data.devMode;
+    } catch (error) {
+        console.error('Failed to load dev mode status:', error);
+    }
+}
+
+async function handleDevModeToggle() {
+    const enabled = devModeCheckbox.checked;
+    try {
+        await fetch(`${API_BASE}/dev-mode`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        console.log(`Dev mode ${enabled ? 'enabled' : 'disabled'}`);
+        // Optional: show a temporary toast notification
+    } catch (error) {
+        console.error('Failed to toggle dev mode:', error);
+        devModeCheckbox.checked = !enabled; // revert on error
+        alert('Failed to toggle dev mode. Check console for details.');
+    }
 }
 
 window.handleDeleteWatch = handleDeleteWatch;

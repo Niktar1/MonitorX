@@ -200,3 +200,13 @@ code {
     padding: 3px 6px;
     border-radius: 4px;
 }
+
+.dev-mode-toggle {
+    margin-left: 20px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+}
+.dev-mode-toggle input {
+    margin-right: 5px;
+}

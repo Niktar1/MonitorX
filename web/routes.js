@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const logger = require('../logger');
+
 const {
     getDb,
     findActiveWatchByUrl,
@@ -9,7 +11,6 @@ const {
 const { scheduleWatch, unscheduleWatch, pauseAllJobs, resumeAllJobs } = require('../core/scheduler');
 const { ensureLoggedIn } = require('../core/auth');
 const { normalizeFacebookUrl } = require('../core/scraper');
-const logger = require('../logger');
 
 router.get('/status', (req, res) => {
     res.json({
@@ -148,6 +149,19 @@ router.post('/auth/login', async (req, res) => {
         logger.error(`Auth login error: ${error.message}`);
         res.status(500).json({ error: error.message });
     }
+});
+
+//  Dev Mode Toggle
+router.get('/dev-mode', (req, res) => {
+    const currentLevel = logger.getLogLevel();
+    res.json({ devMode: currentLevel === 'debug' });
+});
+
+router.post('/dev-mode', (req, res) => {
+    const { enabled } = req.body;
+    const newLevel = enabled ? 'debug' : 'info';
+    logger.setLogLevel(newLevel);
+    res.json({ devMode: enabled });
 });
 
 module.exports = router;

@@ -281,6 +281,15 @@ async function extractGroupPosts(page, groupUrl) {
                 return [];
             }
 
+            if (logger.level === 'debug') {
+                try {
+                    const html = await page.content();
+                    logger.debug({ html: html.slice(0, 5000) }, 'Page HTML snapshot on failure');
+                } catch (e) {
+                    // Ignore if page is already closed
+                }
+            }
+
             await page.waitForTimeout(3000);
         }
     }
