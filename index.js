@@ -7,6 +7,7 @@ const { closePersistentContext } = require('./core/auth');
 const { getDb, closeDb } = require('./core/db');
 const { startScheduler, stopAllJobs } = require('./core/scheduler');
 const apiRoutes = require('./web/routes');
+const { startMaintenance } = require('./core/maintenance');
 
 const app = express();
 
@@ -45,6 +46,7 @@ async function startServer() {
     try {
         await getDb();
         await startScheduler();
+        startMaintenance();
         
         // Pre-warm authentication check (will open visible browser if not logged in)
         const { ensureLoggedIn } = require('./core/auth');

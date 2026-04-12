@@ -17,5 +17,8 @@ module.exports = {
       kill_timeout: 5000,               // Allow graceful shutdown (DB close, Playwright context cleanup)
       wait_ready: true,
       listen_timeout: 10000,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      max_restarts: 10,
+      min_uptime: 5000,
     }]
   };

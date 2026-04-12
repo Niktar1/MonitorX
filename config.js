@@ -27,9 +27,13 @@ module.exports = {
         ]
     },
 
+    retentionDays: {
+        detectedPosts: 30,      // Keep seen posts for 30 days
+        scanHistory: 14,        // Keep scan history for 14 days
+    },
     // Default Discord Webhooks (can be overridden in UI/DB)
     defaultWebhooks: [
         { name: 'Alerts Channel', url: '' }, // Fill these in later or leave blank
         { name: 'Debug Channel', url: '' }
-    ]
+    ]  
 };
