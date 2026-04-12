@@ -19,7 +19,12 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop MonitorX",
+    "pm2:restart": "pm2 restart MonitorX",
+    "pm2:logs": "pm2 logs MonitorX",
+    "pm2:monit": "pm2 monit"
   },
   "dependencies": {
     "axios": "^1.15.0",
@@ -33,6 +38,7 @@
     "sqlite3": "^6.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "pm2": "^6.0.14"
   }
 }

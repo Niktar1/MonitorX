@@ -52,9 +52,21 @@ async function startServer() {
             logger.warn('Could not verify Facebook login at startup. You may need to log in via the UI.');
         });
         
-        app.listen(config.port, () => {
+        const server = app.listen(config.port, () => {
             logger.info(`MonitorX Web UI running at http://localhost:${config.port}`);
+            
+            // Signal PM2 that the app is ready
+            if (typeof process.send === 'function') {
+                process.send('ready');
+            }
         });
+
+        // Handle server errors gracefully
+        server.on('error', (err) => {
+            logger.error(`Server error: ${err.message}`);
+            process.exit(1);
+        });
+
     } catch (error) {
         logger.error(`Failed to start: ${error.message}`);
         process.exit(1);
