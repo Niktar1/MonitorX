@@ -1,48 +1,61 @@
-// core/notifier.js
 const axios = require('axios');
 const logger = require('../logger');
 
-/**
- * Sends a Discord notification for new posts.
- * @param {string} groupUrl - The Facebook group URL.
- * @param {string[]} postIds - Array of new post IDs.
- * @param {string[]} webhookUrls - List of Discord webhook URLs.
- */
-async function sendNotifications(groupUrl, postIds, webhookUrls) {
+async function sendNotifications(groupUrl, postsOrIds, webhookUrls) {
     if (!webhookUrls || webhookUrls.length === 0) {
         logger.warn('No webhooks configured. Skipping notifications.');
         return;
     }
 
-    for (const postId of postIds) {
-        const postUrl = `https://www.facebook.com/groups/${extractGroupId(groupUrl)}/posts/${postId}`;
+    const normalizedPosts = postsOrIds.map(post => normalizePost(groupUrl, post)).filter(Boolean);
+
+    for (const post of normalizedPosts) {
         const message = {
             content: null,
             embeds: [{
-                title: '🆕 New Post Detected',
-                description: `[Click to view post](${postUrl})`,
-                color: 0x4267B2, // Facebook blue
+                title: 'New Post Detected',
+                description: post.postUrl ? `[Click to view post](${post.postUrl})` : 'A new Facebook group post was detected.',
+                color: 0x4267B2,
                 fields: [
                     { name: 'Group', value: groupUrl, inline: false },
-                    { name: 'Post ID', value: postId, inline: true }
+                    { name: 'Post ID', value: post.postId || 'Unavailable', inline: true }
                 ],
                 timestamp: new Date().toISOString(),
                 footer: { text: 'MonitorX' }
             }]
         };
 
-        // Send to each webhook with small delay to avoid rate limits
-        for (const url of webhookUrls) {
+        for (const webhookUrl of webhookUrls) {
             try {
-                await axios.post(url, message);
-                logger.debug(`Notification sent for post ${postId} to webhook.`);
+                await axios.post(webhookUrl, message);
+                logger.debug(`Notification sent for post ${post.postId || post.postUrl} to webhook.`);
             } catch (error) {
-                logger.error(`Failed to send webhook to ${url}: ${error.response?.status} ${error.message}`);
+                logger.error(`Failed to send webhook to ${webhookUrl}: ${error.response?.status} ${error.message}`);
             }
-            // Respect Discord rate limit (5 requests per 2 seconds per webhook)
+
             await new Promise(resolve => setTimeout(resolve, 500));
         }
     }
+}
+
+function normalizePost(groupUrl, postOrId) {
+    if (!postOrId) {
+        return null;
+    }
+
+    if (typeof postOrId === 'string') {
+        return {
+            postId: postOrId,
+            postUrl: `https://www.facebook.com/groups/${extractGroupId(groupUrl)}/posts/${postOrId}`
+        };
+    }
+
+    return {
+        postId: postOrId.postId || null,
+        postUrl: postOrId.canonicalUrl || (postOrId.postId
+            ? `https://www.facebook.com/groups/${extractGroupId(groupUrl)}/posts/${postOrId.postId}`
+            : null)
+    };
 }
 
 function extractGroupId(groupUrl) {

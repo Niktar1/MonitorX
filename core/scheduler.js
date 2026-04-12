@@ -1,167 +1,213 @@
-// core/scheduler.js
 const logger = require('../logger');
 const config = require('../config');
 const { getAuthenticatedPage } = require('./auth');
-const { extractPostIds, getNewPostIds } = require('./scraper');
-const { getDb } = require('./db'); // We'll create db.js next
+const { extractGroupPosts } = require('./scraper');
+const {
+    getActiveWatches,
+    getWatchById,
+    getEnabledWebhookUrls,
+    upsertDetectedPosts,
+    markPostsNotified,
+    updateWatchScanState
+} = require('./db');
 const { sendNotifications } = require('./notifier');
 
-// Store active job intervals and locks
-const activeJobs = new Map(); // watchId -> { interval, lock: boolean }
+const activeJobs = new Map(); // watchId -> { interval, lock, url }
+const pausedJobs = new Map();
+let isPaused = false;
 
-/**
- * Starts the monitoring scheduler.
- * Loads all active watches from DB and sets intervals.
- */
 async function startScheduler() {
-    const db = await getDb();
-    const watches = await db.all('SELECT * FROM watches WHERE active = 1');
-    
+    const watches = await getActiveWatches();
+
     for (const watch of watches) {
         scheduleWatch(watch);
     }
+
     logger.info(`Scheduler started with ${watches.length} active watches.`);
 }
 
-/**
- * Schedules a single watch job.
- */
 function scheduleWatch(watch) {
-    const { id, url } = watch;
-    
-    if (activeJobs.has(id)) {
-        // Already scheduled, skip
+    const watchId = Number(watch.id);
+    if (activeJobs.has(watchId)) {
         return;
     }
 
     const job = {
         lock: false,
-        interval: setInterval(async () => {
-            if (job.lock) {
-                logger.debug(`Skipping scan for ${url} - previous scan still running.`);
-                return;
-            }
-            job.lock = true;
-            try {
-                await runWatchJob(watch);
-            } catch (error) {
-                logger.error(`Error in watch job ${url}: ${error.message}`);
-            } finally {
-                job.lock = false;
-            }
-        }, config.scanIntervalMs)
+        url: watch.url,
+        interval: setInterval(() => runScheduledWatch(job, watchId), config.scanIntervalMs)
     };
 
-    activeJobs.set(id, job);
-    logger.info(`Scheduled watch for ${url} every ${config.scanIntervalMs/1000}s`);
+    activeJobs.set(watchId, job);
+
+    // Prime the watch immediately so newly added groups bootstrap without waiting a full interval.
+    void runScheduledWatch(job, watchId);
+
+    logger.info(`Scheduled watch for ${watch.url} every ${config.scanIntervalMs / 1000}s`);
 }
 
-/**
- * Stops and removes a watch job.
- */
 function unscheduleWatch(watchId) {
-    const job = activeJobs.get(watchId);
-    if (job) {
-        clearInterval(job.interval);
-        activeJobs.delete(watchId);
-        logger.info(`Unscheduled watch ID ${watchId}`);
+    const numericWatchId = Number(watchId);
+    const job = activeJobs.get(numericWatchId) || pausedJobs.get(numericWatchId);
+    if (!job) {
+        return;
     }
+
+    clearInterval(job.interval);
+    activeJobs.delete(numericWatchId);
+    pausedJobs.delete(numericWatchId);
+    logger.info(`Unscheduled watch ID ${numericWatchId}`);
 }
 
-/**
- * Stops all scheduled jobs (for graceful shutdown).
- */
 function stopAllJobs() {
-    for (const [id, job] of activeJobs) {
+    for (const [, job] of activeJobs) {
         clearInterval(job.interval);
     }
+
+    for (const [, job] of pausedJobs) {
+        clearInterval(job.interval);
+    }
+
     activeJobs.clear();
+    pausedJobs.clear();
     logger.info('All monitoring jobs stopped.');
 }
 
-/**
- * Core logic executed for each watch.
- */
-async function runWatchJob(watch) {
-    const db = await getDb();
-    const { id, url, last_post_id } = watch;
-    
-    logger.debug(`Scanning ${url}`);
+async function runScheduledWatch(job, watchId) {
+    if (job.lock) {
+        logger.debug(`Skipping scan for watch ${watchId} because the previous scan is still running.`);
+        return;
+    }
 
-    // Get authenticated context (reuses session)
-    let context, page;
+    job.lock = true;
     try {
-        ({ context, page } = await getAuthenticatedPage());
-        
-        // Extract current post IDs
-        const currentIds = await extractPostIds(page, url);
-        
-        // Determine new posts
-        const newPostIds = getNewPostIds(currentIds, last_post_id);
-        
-        if (newPostIds.length > 0) {
-            logger.info(`Found ${newPostIds.length} new posts for ${url}`);
-            
-            // Get webhooks for this watch (or global defaults)
-            const webhooks = await db.all('SELECT url FROM webhooks WHERE enabled = 1');
-            const webhookUrls = webhooks.map(w => w.url);
-            
-            // Send notifications
-            await sendNotifications(url, newPostIds, webhookUrls);
-            
-            // Update last_post_id to the newest (first) post ID
-            const newestId = currentIds[0] || last_post_id;
-            await db.run(
-                'UPDATE watches SET last_post_id = ?, last_scan = CURRENT_TIMESTAMP WHERE id = ?',
-                [newestId, id]
-            );
-        } else {
-            await db.run('UPDATE watches SET last_scan = CURRENT_TIMESTAMP WHERE id = ?', [id]);
+        const watch = await getWatchById(watchId);
+        if (!watch || !watch.active) {
+            unscheduleWatch(watchId);
+            return;
         }
+
+        await runWatchJob(watch);
     } catch (error) {
-        logger.error(`Error scanning ${url}: ${error.message}`);
+        logger.error(`Error in watch job ${watchId}: ${error.message}`);
     } finally {
-        // Close only the page, NOT the context
-        if (page) await page.close().catch(() => {});
+        job.lock = false;
     }
 }
 
-let isPaused = false;
-const pausedJobs = new Map(); // Store intervals when paused
+async function runWatchJob(watch) {
+    const { id, url } = watch;
+    logger.debug(`Scanning ${url}`);
+
+    let page;
+
+    try {
+        ({ page } = await getAuthenticatedPage());
+
+        const posts = await extractGroupPosts(page, url);
+        const newestPost = posts[0] || null;
+
+        if (!posts.length) {
+            await updateWatchScanState({
+                watchId: id,
+                status: 'empty',
+                totalPosts: 0,
+                newPosts: 0,
+                lastPostId: watch.last_post_id,
+                lastSeenPostKey: watch.last_seen_post_key,
+                lastError: null,
+                bootstrapComplete: watch.bootstrap_complete
+            });
+            return;
+        }
+
+        const insertedPosts = await upsertDetectedPosts(id, posts);
+
+        if (!watch.bootstrap_complete) {
+            await updateWatchScanState({
+                watchId: id,
+                status: 'initialized',
+                totalPosts: posts.length,
+                newPosts: 0,
+                lastPostId: newestPost?.postId || watch.last_post_id,
+                lastSeenPostKey: newestPost?.postKey || watch.last_seen_post_key,
+                lastError: null,
+                bootstrapComplete: 1
+            });
+
+            logger.info(`Initialized watch ${url} with ${posts.length} baseline posts.`);
+            return;
+        }
+
+        const webhooks = await getEnabledWebhookUrls();
+        const notifiablePosts = insertedPosts.filter(post => post.postId || post.canonicalUrl);
+
+        if (notifiablePosts.length) {
+            logger.info(`Found ${notifiablePosts.length} new posts for ${url}`);
+            await sendNotifications(url, notifiablePosts, webhooks);
+            await markPostsNotified(id, notifiablePosts.map(post => post.postKey));
+        }
+
+        await updateWatchScanState({
+            watchId: id,
+            status: 'success',
+            totalPosts: posts.length,
+            newPosts: notifiablePosts.length,
+            lastPostId: newestPost?.postId || watch.last_post_id,
+            lastSeenPostKey: newestPost?.postKey || watch.last_seen_post_key,
+            lastError: null,
+            bootstrapComplete: 1
+        });
+    } catch (error) {
+        await updateWatchScanState({
+            watchId: id,
+            status: 'error',
+            totalPosts: 0,
+            newPosts: 0,
+            lastPostId: watch.last_post_id,
+            lastSeenPostKey: watch.last_seen_post_key,
+            lastError: error.message,
+            bootstrapComplete: watch.bootstrap_complete
+        }).catch(dbError => {
+            logger.error(`Failed to persist scan error for watch ${id}: ${dbError.message}`);
+        });
+
+        logger.error(`Error scanning ${url}: ${error.message}`);
+    } finally {
+        if (page) {
+            await page.close().catch(() => {});
+        }
+    }
+}
 
 function pauseAllJobs() {
-    if (isPaused) return;
+    if (isPaused) {
+        return;
+    }
+
     isPaused = true;
     for (const [id, job] of activeJobs) {
         clearInterval(job.interval);
         pausedJobs.set(id, job);
     }
+
     activeJobs.clear();
     logger.info('All monitoring jobs paused.');
 }
 
 function resumeAllJobs() {
-    if (!isPaused) return;
-    isPaused = false;
-    for (const [id, job] of pausedJobs) {
-        const newInterval = setInterval(async () => {
-            if (job.lock) return;
-            job.lock = true;
-            try {
-                const db = await getDb();
-                const watch = await db.get('SELECT * FROM watches WHERE id = ?', [id]);
-                if (watch && watch.active) {
-                    await runWatchJob(watch);
-                }
-            } catch (error) {
-                logger.error(`Error in resumed job: ${error.message}`);
-            } finally {
-                job.lock = false;
-            }
-        }, config.scanIntervalMs);
-        job.interval = newInterval;
-        activeJobs.set(id, job);
+    if (!isPaused) {
+        return;
     }
+
+    isPaused = false;
+
+    for (const [id, job] of pausedJobs) {
+        job.interval = setInterval(() => runScheduledWatch(job, id), config.scanIntervalMs);
+        activeJobs.set(id, job);
+        void runScheduledWatch(job, id);
+    }
+
     pausedJobs.clear();
     logger.info('All monitoring jobs resumed.');
 }

@@ -10,7 +10,7 @@ module.exports = {
     logLevel: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'),
 
     // Monitoring
-    scanIntervalMs: 60 * 1000, // 60 seconds
+    scanIntervalMs: 30 * 1000, // 60 seconds
     
     // Storage Paths
     dbPath: './storage/db.json',
