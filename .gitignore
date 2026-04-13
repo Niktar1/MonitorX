@@ -1,6 +1,25 @@
+# OS files
 node_modules/
 .env
 storage/
 logs/*.log
 *.log
 .DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+
+# Build output
+dist/
+MonitorX.exe
+
+# Runtime data
+storage/
+logs/
+
+# Playwright browsers (copied locally for packaging)
+node_modules/playwright-core/.local-browsers/

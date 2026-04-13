@@ -164,4 +164,14 @@ router.post('/dev-mode', (req, res) => {
     res.json({ devMode: enabled });
 });
 
+router.post('/shutdown', (req, res) => {
+    res.json({ message: 'Shutting down...' });
+
+    // Give time for response, then exit worker cleanly
+    setTimeout(() => {
+        // In cluster worker, process.exit(0) will cause primary to exit as well
+        process.exit(0);
+    }, 500);
+});
+
 module.exports = router;

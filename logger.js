@@ -1,21 +1,42 @@
 // logger.js
-const pino = require('pino');
+const winston = require('winston');
+const path = require('path');
 const config = require('./config');
+
+// Log directory - resolved in config (pkg-safe)
+const logDir = config.logsDir;
+
+const { combine, timestamp, printf, colorize, errors } = winston.format;
+
+const logFormat = printf(({ level, message, timestamp, stack }) => {
+    return `${timestamp} [${level}]: ${stack || message}`;
+});
 
 // Current log level (can be changed at runtime)
 let currentLogLevel = config.logLevel;
 
-// Create a single logger instance
-const logger = pino({
+const logger = winston.createLogger({
     level: currentLogLevel,
-    transport: {
-        target: 'pino-pretty',
-        options: {
-            colorize: true,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname',
-        },
-    },
+    format: combine(
+        timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        errors({ stack: true }),
+        logFormat
+    ),
+    transports: [
+        // Console transport
+        new winston.transports.Console({
+            format: combine(
+                colorize(),
+                timestamp({ format: 'HH:mm:ss' }),
+                logFormat
+            )
+        }),
+        // File transport for persistent logs
+        new winston.transports.File({
+            filename: path.join(logDir, 'app.log'),
+            level: 'debug'
+        })
+    ]
 });
 
 /**
@@ -33,6 +54,12 @@ function setLogLevel(level) {
  */
 function getLogLevel() {
     return currentLogLevel;
+}
+
+// Ensure log directory exists (for file transport)
+const fs = require('fs');
+if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
 }
 
 module.exports = logger;

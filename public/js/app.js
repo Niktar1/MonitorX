@@ -14,6 +14,7 @@ const stopBtn = document.getElementById('stop-monitor-btn');
 const watchesList = document.getElementById('watches-list');
 const webhooksList = document.getElementById('webhooks-list');
 const devModeCheckbox = document.getElementById('dev-mode-checkbox');
+const shutdownBtn = document.getElementById('shutdown-btn');
 
 const defaultWebhooks = [
     { name: 'Alerts Channel', url: '' },
@@ -308,6 +309,16 @@ async function handleDevModeToggle() {
         alert('Failed to toggle dev mode. Check console for details.');
     }
 }
+
+shutdownBtn.addEventListener('click', async () => {
+    if (!confirm('Shut down MonitorX? The app will stop completely.')) return;
+    try {
+        await fetch(`${API_BASE}/shutdown`, { method: 'POST' });
+        // The server will exit, so UI will become unreachable
+    } catch (error) {
+        alert('Shutdown request sent. The app should close shortly.');
+    }
+});
 
 window.handleDeleteWatch = handleDeleteWatch;
 window.handleDeleteWebhook = handleDeleteWebhook;
